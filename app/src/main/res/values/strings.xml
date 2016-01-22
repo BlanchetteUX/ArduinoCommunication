@@ -6,6 +6,5 @@
     <string name="sendText">Message</string>
     <string name="sendButton">SEND</string>
     <string name="mainTitle">Bluetooth COM</string>
-    <string name="LED13">LED</string>
-    <string name="refButton">R</string>
+    <string name="speech">SPEECH</string>
 </resources>

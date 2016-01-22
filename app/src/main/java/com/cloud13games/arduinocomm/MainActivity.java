@@ -3,137 +3,91 @@ package com.cloud13games.arduinocomm;
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothSocket;
-import android.content.Context;
-import android.graphics.Color;
+import android.content.Intent;
 import android.os.Bundle;
-import android.text.Editable;
-import android.text.TextWatcher;
+import android.speech.RecognizerIntent;
 import android.view.View;
 import android.view.View.OnClickListener;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.widget.ToggleButton;
 
-import java.io.IOException;
-import java.io.OutputStream;
+import java.util.List;
+import java.util.Set;
 
 public class MainActivity extends Activity {
 
-    Boolean deviceChosen = false;
-
     TextView sendMessage;
-    ToggleButton LED13;
+    Button speechButton;
     Button sendButton;
-    Button refreshButton;
-    Button chooseButton;
-    Button chooseButton1;
-    Button chooseButton2;
+    ListView deviceList;
 
-    BTHandler btHandler = null;
+    BTHandler btHandler = new BTHandler();
 
     public void onCreate(Bundle bundle) {
         super.onCreate(bundle);
 
-        setContentView(R.layout.activity_choose);
+        setContentView(R.layout.activity_list);
+        deviceList = (ListView) findViewById(R.id.deviceList);
 
-        chooseDevice();
-        chooseButton.setText(BTHandler.text[0]);
-        chooseButton1.setText(BTHandler.text[1]);
-        chooseButton2.setText(BTHandler.text[2]);
-
-        refreshButton = (Button) findViewById(R.id.refreshButton);
-        refreshButton.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (refreshButton.isPressed()) {
-                    setContentView(R.layout.activity_choose);
-                    chooseDevice();
-                    chooseButton.setText(BTHandler.text[0]);
-                    chooseButton1.setText(BTHandler.text[1]);
-                    chooseButton2.setText(BTHandler.text[2]);
-                }
-            }
-        });
-        if (deviceChosen) {
-            setContentView(R.layout.activity_main);
-            listeners();
+        //Bluetooth & listview chunk
+        final Set<BluetoothDevice> pairedDevices =  BluetoothAdapter.getDefaultAdapter().getBondedDevices();
+        final String[] list = new String[20];
+        //needed to avoid nullpointerexception
+        for(int j = 0; j <= 19; j++) {
+            list[j] = new String();
         }
-    }
-
-    public void onStart() {
-        super.onStart();
-
-    }
-
-    private void chooseDevice() {
-        chooseButton = (Button) findViewById(R.id.deviceButton);
-        chooseButton.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (chooseButton.isPressed()) {
-                    btHandler.setDevice();
-                    deviceChosen = true;
-                }
-            }
-        });
-
-        chooseButton1 = (Button) findViewById(R.id.deviceButton1);
-        chooseButton1.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (chooseButton1.isPressed()) {
-                    btHandler.setDevice();
-                    deviceChosen = true;
-                }
-            }
-        });
-
-        chooseButton2 = (Button) findViewById(R.id.deviceButton2);
-        chooseButton2.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (chooseButton2.isPressed()) {
-                    btHandler.setDevice();
-                    deviceChosen = true;
-                }
-            }
-        });
-
-        try {
-            btHandler.writeList();
-        } catch (NullPointerException e) {
-            e.printStackTrace();
+        list[3] = "NUMBER OF DEVICES FOUND: " + pairedDevices.size();
+        int i = 5;
+        for (BluetoothDevice bt : pairedDevices) {
+            list[i] = bt.getName() + " :: " + bt.getAddress();
+            i++;
         }
+
+        //populate listview and check for item click
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, R.layout.row_layout, R.id.label, list);
+        deviceList.setAdapter(adapter);
+        deviceList.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                int j = 5;
+                for (BluetoothDevice bt : pairedDevices) {
+                    if (position == j) {
+                        btHandler.setDevice(bt);
+                        Toast.makeText(getApplicationContext(), bt.getAddress(), Toast.LENGTH_SHORT).show();
+                    }
+                    j++;
+                }
+                setContentView(R.layout.activity_main);
+                listeners();
+                btHandler.startConnection();
+            }
+        });
     }
 
+    /*
+        Handles the click listeners for the two buttons on the 'main' activity
+    */
     private void listeners() {
-        LED13 = (ToggleButton) findViewById(R.id.LEDButton);
-        LED13.setOnClickListener(new OnClickListener() {
+        sendMessage = (TextView) findViewById(R.id.sendText);
+        speechButton = (Button) findViewById(R.id.speechButton);
+        sendButton = (Button) findViewById(R.id.sendButton);
+
+        speechButton.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (LED13.isChecked()) {
-                    try {
-                        sendData("on");
-                    } catch (NullPointerException e) {
-                        e.printStackTrace();
-                    }
-                } else if (!LED13.isChecked()) {
-                    try {
-                        sendData("off");
-                    } catch (NullPointerException e) {
-                        e.printStackTrace();
-                    }
-                }
+                speech();
             }
         });
 
-        sendButton = (Button) findViewById(R.id.sendButton);
         sendButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
+                String s = sendMessage.getText().toString();
                 try {
-                    sendData(sendMessage.getText().toString());
+                    sendData(s);
                 } catch (NullPointerException e) {
                     e.printStackTrace();
                 }
@@ -141,6 +95,49 @@ public class MainActivity extends Activity {
         });
     }
 
+    //VOICE TO TEXT CODE
+    private static final int SPEECH_REQUEST_CODE = 0;
+
+    private void speech() {
+        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        startActivityForResult(intent, SPEECH_REQUEST_CODE);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode,
+                                    Intent data) {
+        if (requestCode == SPEECH_REQUEST_CODE && resultCode == RESULT_OK) {
+            List<String> results = data.getStringArrayListExtra(
+                    RecognizerIntent.EXTRA_RESULTS);
+            String spokenText = results.get(0);
+            //Insert code to handle the voice to text
+            parseVoice(spokenText);
+        }
+        super.onActivityResult(requestCode, resultCode, data);
+    }
+
+    /*
+        Parses through the captured VTT as a string and checks for a command to send to the arduino
+     */
+    private void parseVoice(String s) {
+        if(s.contains("blue") && s.contains("on")) {
+            sendData("bON");
+        } else if(s.contains("blue") && s.contains("off")) {
+            sendData("bOFF");
+        } else if((s.contains("orange") || s.contains("yellow"))&& s.contains("on")) {
+            sendData("oON");
+        } else if((s.contains("orange") || s.contains("yellow")) && s.contains("off")) {
+            sendData("oOFF");
+        } else {
+            sendMessage.setText(s);
+        }
+
+    }
+
+    /*
+        Sends data to the arduino
+     */
     private void sendData(String data) {
         byte[] bytes = data.getBytes();
         btHandler.write(bytes);
